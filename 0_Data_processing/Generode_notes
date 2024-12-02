@@ -1,0 +1,22 @@
+#####################
+### Data processing #
+#####################
+
+# 1. We used the Generode pipeline (https://github.com/NBISweden/GenErode/wiki) to perfrom the following:
+
+- Raw Data processing, including trimming, mapping, variant calling , quality filtering
+- Variant annotation with SNPeff
+
+
+We used all default parameters except for minimum depth of coverage for variant calling which was set at 5X (default 3x; 8.2_vcf_qual_repeat_filtering).
+
+See: 
+
+- https://github.com/NBISweden/GenErode/blob/main/workflow/rules/8.2_vcf_qual_repeat_filtering.smk
+- inside the file look for: rule filter_vcfs_qual_dp (l.237-241)
+
+      # check minimum depth threshold
+        if awk "BEGIN{{exit ! ($minDP < 5)}}"
+        then
+          minDP=5
+        fi
