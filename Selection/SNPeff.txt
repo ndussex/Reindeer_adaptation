@@ -1,0 +1,10 @@
+#SNPeff analysis
+
+#1. run SNPeff 
+We used the Generode pipeline (https://github.com/NBISweden/GenErode/wiki) to perfrom the following:
+
+- Variant annotation with SNPeff
+
+
+#2. Processing
+.........
