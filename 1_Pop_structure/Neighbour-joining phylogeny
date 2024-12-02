@@ -1,0 +1,37 @@
+# Build a Neighbour-joining phylogeny
+
+
+# 1. build the tree in Angsd
+# 1.1. this generates a beagle file for each chromosome
+
+Angsd.sh
+
+#!/bin/bash -l
+#SBATCH -A project_ID
+#SBATCH -p node -n 1
+#SBATCH -J Tree_Angsd
+#SBATCH -t 6-00:00:00
+
+module load bioinfo-tools
+module load ANGSD/0.917
+
+date
+
+REF='GCA_019903745.2_ULRtarCaribou_2v2_genomic.fa'
+OUTPUT_DIR="63genomes"
+
+# List of chromosomes
+CHROMOSOMES=("CM056401.1" "CM056402.1" "CM056403.1" "CM056404.1" "CM056405.1" "CM056406.1" "CM056407.1" "CM056408.1" "CM056409.1" "CM056410.1" "CM056411.1" "CM056412.1" "CM056413.1" "CM056414.1" "CM056415.1" "CM056416.1" "CM056417.1" "CM056418.1" "CM056419.1" "CM056420.1" "CM056421.1" "CM056422.1" "CM056423.1" "CM056424.1" "CM056425.1" "CM056426.1" "CM056427.1" "CM056428.1" "CM056429.1" "CM056430.1" "CM056431.1" "CM056432.1" "CM056433.1" "CM056434.1")
+
+# Run ANGSD for each chromosome
+for CHR in "${CHROMOSOMES[@]}"; do
+	OUTPUT_PREFIX="${OUTPUT_DIR}/output_${CHR}"
+    angsd -r "${CHR}" -bam bam_list_63_genomes -out reindeer_adaptation_data_63genomes -GL 2 -doGlf 2 -doPlink 2 -doMajorMinor 1 -SNP_pval 1e-6 -doGeno -1 -doPost 1 -minMapQ 30 -minQ 20 -minMaf 0.05
+ -doCounts 1 -doMaf 3 -geno_minDepth 5 -setMinDepthInd 5 -postCutoff 0.95 -minInd 10 -remove_bads 1 -uniqueOnly 1 -nThreads 12
+done
+
+# 1.2 combine all beagle files
+
+
+
+# 2. generate bootstraps in R
