@@ -1,0 +1,152 @@
+#Pos-processing scripts for PBS results
+
+# 1. run PBS_step1_step2.sh
+###################################
+
+See specific bash/slurm script
+
+# 2. concatenate files
+######################
+
+(head -1  out_files/pbs.CM056401.1.sliding_window ; tail -n +2 -q  out_files/*sliding_window* ) > pbs_Feb24_Svbd_Novz_ru.res
+curl --upload-file pbs_Feb24_Svbd_Novz_ru.res https://transfer.sh/pbs_Feb24_Svbd_Novz_ru.res
+
+
+# 3. plot in R and extract top hits 
+###################################
+
+library(dplyr)
+library(ggplot2)
+library(doBy)
+library(expss)
+
+# load pbs results
+setwd("~/PBS_out")
+pbs<- read.table('pbs_Feb24_Svbd_Novz_ru.res', header=T, stringsAsFactors=F)
+head(pbs)
+nrow(pbs)
+#242692
+
+#population order in the file: http://www.popgen.dk/angsd/index.php/Fst
+
+#realSFS fst index -r $LINE out_files/SVA.saf.idx out_files/EU.saf.idx out_files/CAN.saf.idx -sfs out_files/SVA.EU.$LINE.ml -sfs out_files/SVA.CAN.$LINE.ml -sfs out_files/CAN.EU.$LINE.ml -fstout out_files/pbs.$LINE
+# SVA.EU = pop1.pop2 -> PBS0 (col. 8) 
+# SVA.CAN = pop1.pop3 -> PBS1 (col. 9)
+# EU.CAN  = pop2.pop3 -> PBS2 (col. 10)
+
+#chat with Xin (oct. 2022)
+#PBS0 = PBS_SVA = (FST_SVA_CAN + Fst_SVA_EU - Fst_EU_CAN)/2 <<<<<<<
+#PBS1 = PBS_CAN = (FST_SVA_CAN + Fst_CAN_EU - Fst_SVA_EU)/2
+#PBS2 = PBS_EU = (Fst_CAN_EU + Fst_CAN_EU - FST_SVA_CAN)/2
+
+#add chromosome order + label
+chrom_list <- read.table('Sca_chrom_list.txt', header=T, stringsAsFactors=F)
+head(chrom_list)
+
+sca<-vlookup(pbs[,2],chrom_list,result_column = 3, lookup_column = 1)
+df_pbs<-data.frame(pbs,scaffold=sca)
+head(df_pbs)
+tail(df_pbs)
+nrow(df_pbs)
+
+# order by chr number
+res = df_pbs[which(df_pbs[11] %in% 'Chr1'),]
+for(i in 1:34){
+  res = rbind(res, df_pbs[which(df_pbs[,11] %in% paste0('Chr',i)),])
+}
+res = cbind(res,1:nrow(res))
+nrow(res)
+#198043
+head(res)
+
+# find the middle points for each chr (for naming)
+
+#Ah, yes sorry. You need to count the windows per chr and replace them in the list called 'l'. 
+#This is so the chr names are correctly located in the x axis.
+#You can use table(res[,11])
+
+l = c(9448,7963,8506,9329,8833,9007,8098,5953,5551,6544,6053,7562,4864,6162,6667,5103,3809,5238,3837,3669,5888,5431,3760,4653,5168,4394,5887,4064,4175,3289,3762,4073,2194,9109)
+#what is ind???? seems like it is the place where the tick of the chromosome is set
+ind = c(4500)
+for (j in 2:length(l)){
+  ind[j] = ind[j-1]+round(l[j-1]/2)+round(l[j]/2)
+}
+
+# ticks look odd on the graph
+
+# plot
+
+# ,8 for No closer (i.e.)
+pdf('Reindeer_pbs_slidingWindow50k10k_top01_PBS0_Svbd_NovZ_Ru.pdf', height=7, width=14)
+
+plot(NULL, pch=16, cex.axis=1.5, cex.lab = 2, ylab='PBS',ylim=c(0.2,2.5), xlim=c(0,nrow(res)), xlab='',xaxt='n', main='Top 0.1% Fst values')
+axis(1, at=ind, labels=unique(res[,11]), cex.axis=0.85, las=2)
+points(res[which(res[,11] %in% c('Chr1','Chr3','Chr5','Chr7','Chr9','Chr11','Chr13','Chr15','Chr17','Chr19','Chr21','Chr23','Chr25','Chr27','Chr29','Chr31','Chr33')),12], res[which(res[,11] %in% c('Chr1','Chr3','Chr5','Chr7','Chr9','Chr11','Chr13','Chr15','Chr17','Chr19','Chr21','Chr23','Chr25','Chr27','Chr29','Chr31','Chr33')),8], pch=1, cex=0.4, col='black',cex.axis=0.8)
+points(res[which(res[,11] %in% c('Chr2','Chr4','Chr6','Chr8','Chr10','Chr12','Chr14','Chr16','Chr18','Chr20','Chr22','Chr24','Chr26','Chr28','Chr30','Chr32','Chr34')),12], res[which(res[,11] %in% c('Chr2','Chr4','Chr6','Chr8','Chr10','Chr12','Chr14','Chr16','Chr18','Chr20','Chr22','Chr24','Chr26','Chr28','Chr30','Chr32','Chr34')),8], pch=1, cex=0.4, col='grey',cex.axis=0.8)
+
+# select top hit level
+q = quantile(as.numeric(res[,8]),0.999)
+points(res[res[,8]>=q,12], res[res[,8]>=q,8], pch=16, cex=0.8, col = wes_palette("Zissou1",n=1))
+abline(h=q, col="darkorange",lwd=2.5, lty=2)
+dev.off()
+
+
+##### Add horizonal like at 0.999 quantile?
+
+##extract 0.1% hits
+write.table(res[res[,8]>=q,], file='top01_PBS0_Svbd__NovZ_Ru.bed', row.names=F, col.names=F, quote=F, sep='\t') 
+nrow(res[res[,8]>=q,])
+
+# 4. identify genes based of hits to annotation
+###############################################
+
+# 4.1 reformat top01_PBS0_Svbd__NovZ_Ru.bed with: 
+
+python select_columns.py
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Jan  2 18:23:32 2022
+
+@author: nick
+"""
+
+from os import chdir, getcwd
+wd=getcwd()
+chdir(wd)
+
+file= open('top01_PBS0_Svbd_NovZ_Ru.bed', 'r', encoding = 'utf-8')
+outfile=open('top01_PBS0_Svbd_NovZ_Ru_reformatted.bed','w',encoding = 'utf-8')
+
+for line in file:
+    #print(line)
+        list = line.strip().split('\t')
+        coord=list[0]
+        chrom=list[1]
+        PBS=list[7]
+        coordlist = coord.split(')(')
+        #print(coordlist)
+        start_end=coordlist[2].split(',')
+        #print(start_end)
+        start=start_end[0]
+        end=start_end[1].strip(')')
+        #print(start)
+        #print(end)
+        content=str(chrom + '\t' + start + '\t' + end + '\t' + PBS + '\n')
+        outfile.write(content)
+outfile.close()
+
+file.close()
+
+
+# 4.2 get the matches between the bed file and annotation
+
+module load bioinfo-tools BEDTools/2.29.2
+annotation='Sva_to_Caribou_V2_II_CDS.gff'
+
+bedtools intersect -a $annotation -b top01_PBS0_Svbd_NovZ_Ru_reformatted.bed -wb > matches
+	#1363 matches
+
+
+
