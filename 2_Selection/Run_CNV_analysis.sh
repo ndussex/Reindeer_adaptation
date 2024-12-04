@@ -23,10 +23,10 @@ module --quiet purge  # Reset the modules to the system default
 module load seqtk/1.4-GCC-12.2.0
 module list
 
-chrom=$(awk -v n=$SLURM_ARRAY_TASK_ID 'NR == n {print; exit}' /cluster/projects/nn8052k/vanessa/reindeer_reference_genome_GCA_019903745.2/ncbi_dataset/data/GCA_019903745.2/GCA_019903745.2_ULRtarCaribou_2v2_genomic.chr)
+chrom=$(awk -v n=$SLURM_ARRAY_TASK_ID 'NR == n {print; exit}' /reindeer_reference_genome_GCA_019903745.2/ncbi_dataset/data/GCA_019903745.2/GCA_019903745.2_ULRtarCaribou_2v2_genomic.chr)
 echo $chrom > $chrom.list
 
-seqtk subseq /cluster/projects/nn8052k/vanessa/reindeer_reference_genome_GCA_019903745.2/ncbi_dataset/data/GCA_019903745.2/GCA_019903745.2_ULRtarCaribou_2v2_genomic.fasta $chrom.list > $chrom.fasta
+seqtk subseq /reindeer_reference_genome_GCA_019903745.2/ncbi_dataset/data/GCA_019903745.2/GCA_019903745.2_ULRtarCaribou_2v2_genomic.fasta $chrom.list > $chrom.fasta
 
 echo "all done"
 
@@ -97,7 +97,7 @@ sbatch --array=1-35 --mem=5G --time=00-03:00:00 GenerateDuplicatedWindowRecord.s
 for i in {1..35}
 do
   echo $i
-  chrom=$(awk -v n=$i 'NR == n {print; exit}' /cluster/projects/nn8052k/vanessa/reindeer_reference_genome_GCA_019903745.2/ncbi_dataset/data/GCA_019903745.2/GCA_019903745.2_ULRtarCaribou_2v2_genomic.chr)
+  chrom=$(awk -v n=$i 'NR == n {print; exit}' /reindeer_reference_genome_GCA_019903745.2/ncbi_dataset/data/GCA_019903745.2/GCA_019903745.2_ULRtarCaribou_2v2_genomic.chr)
   cat $chrom.window1000.link >> allChroms_window1000.link
 done
 # done
@@ -129,7 +129,7 @@ set -o nounset  # Treat any unset variables as an error
 module --quiet purge  # Reset the modules to the system default
 module list
 
-perl /cluster/home/vanessab/install/CNVcaller/bin/CNVReferenceDB.pl -w 1000 /cluster/projects/nn8052k/vanessa/reindeer_reference_genome_GCA_019903745.2/ncbi_dataset/data/GCA_019903745.2/GCA_019903745.2_ULRtarCaribou_2v2_genomic.fasta
+perl /install/CNVcaller/bin/CNVReferenceDB.pl -w 1000 /reindeer_reference_genome_GCA_019903745.2/ncbi_dataset/data/GCA_019903745.2/GCA_019903745.2_ULRtarCaribou_2v2_genomic.fasta
 
 echo "all done"
 
