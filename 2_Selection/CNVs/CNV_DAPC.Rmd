@@ -1,0 +1,223 @@
+---
+title: "Reindeer CNV DAPC analysis"
+author: "Vanessa Bieker"
+date: "2024-10-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(vcfR)
+library(adegenet)
+library(tidyr)
+library(rtracklayer)
+library(data.table)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r loadSampleInfo}
+sampleInfo <- read.csv("2024-03-11_mappingStatisticsColdRein - Sheet1.csv")
+```
+
+
+
+
+```{r loadVCFforDAPC}
+cnv_vcf <- read.vcfR("2024-09-27_reindeer_forNic_CNV_onlyAutosome.vcf.gz")
+
+my_genind <- vcfR2genind(cnv_vcf, return.alleles = T)
+
+IDs <- data.frame(indNames(my_genind))
+
+colnames(IDs) <- "sampleID"
+
+sampleInfo_sub <- merge(IDs, sampleInfo, sort=F)
+
+# change the country IDs to combine Russia Novaya Zemlya and Taimyr
+sampleInfo_sub$Country_2 <- sampleInfo_sub$Country
+sampleInfo_sub$Country_2[which(sampleInfo_sub$Country_2 == "Russia (Novaya Zemlya)")] <- "Russia (Novaya Zemlya and Taimyr)"
+sampleInfo_sub$Country_2[which(sampleInfo_sub$Country_2 == "Russia")] <- "Russia (Novaya Zemlya and Taimyr)"
+
+
+```
+
+Perform a DAPC analysis
+Use their Wild/Domestic assignment from metadata
+
+```{r}
+
+# perform the DAPC analysis
+# it shows you plots and asks how many PCs and discriminate functions to use in the analysis
+dapc1 <- dapc(my_genind, sampleInfo_sub$Country_2)
+# use the first 5 PCs and 1 discriminant functions
+
+# plot the results
+pdf("~/Documents/PostDoc/ColdRein/forNic/CNV/DAPC_scatter_plot.pdf")
+scatter(dapc1, legend = T)
+dev.off()
+
+# get the CNV loadings
+contrib <- loadingplot(dapc1$var.contr, axis=1, lab.jitter=1, thres=.0005)
+loadingplot(dapc1$var.contr, axis=1, lab.jitter=1, thres=.0005, lab = "")
+
+# get outlier CNVs (based on the threshold used in the loadingplot command)
+selected_cnvs <- data.frame(contrib$var.names)
+selected_cnvs$var.contr <- contrib$var.values
+
+colnames(selected_cnvs)[1] <- "CNV_ID"
+
+selected_cnvs <- separate(selected_cnvs, col=CNV_ID, into=c("chrom_p1", "chrom_p2", "start", "stop", "allele"))
+selected_cnvs$ID <- paste(selected_cnvs$chrom_p1, "_", selected_cnvs$chrom_p2, ":", selected_cnvs$start, "-", selected_cnvs$stop, sep = "")
+selected_cnvs$chrom <- paste(selected_cnvs$chrom_p1, ".", selected_cnvs$chrom_p2, sep = "")
+# remove the allele column and remove duplicate rows
+selected_cnvs <- subset(selected_cnvs, select = -c(chrom_p1, chrom_p2))
+selected_cnvs_uniq <- unique(subset(selected_cnvs, select = -c(allele)))
+
+my_genind@pop <- as.factor(sampleInfo_sub$Country_2)
+allCNVs_freq <- data.frame()
+
+
+# get allele frequencies for each CNV in Russia and Svalbard
+pdf("2024-10-22_mostDiffCNVs_alleleFreqs_Russia_Svalbard.pdf")
+for (i in 1:nrow(selected_cnvs_uniq)){
+# for (i in 1:10){
+  # get population allele frequencies 
+  freq <- tab(genind2genpop(my_genind[loc=selected_cnvs_uniq$ID[i]]), freq = TRUE)
+
+  # transform the frequencies so that they can be used in ggplot
+  freq_df <- as.data.frame(freq)
+  freq_df$pop <- row.names(freq)
+  freq_df_melt <- melt(freq_df, id.vars = "pop")
+  
+  allCNVs_freq <- rbind(allCNVs_freq, freq_df_melt)
+  # transform the populations into factors. Levels gives the order used for plotting
+  freq_df_melt$pop <- factor(freq_df_melt$pop, levels = c("Russia", "Russia (Novaya Zemlya)", "Svalbard"))
+  
+  # plot allele frequencies as barplots
+  freq_bar_plot <- ggplot(data= freq_df_melt, aes(x=pop, y=value, fill=variable)) +
+  geom_bar(stat="identity") +
+  scale_fill_manual(values=c( "#35B779FF",  "#31688EFF", "#FDE725FF","#440154FF")) +
+  theme(axis.text.x = element_text(angle = 90))
+  
+  print(freq_bar_plot)
+  
+}
+
+dev.off()
+
+write.table(selected_cnvs, "2024-10-20_mostDifferentiatedCNVs.txt", row.names = F)
+
+write.table(allCNVs_freq, "2024-10-22_mostDifferentiatedCNVs_alleleFrequencies_Russia_Svalbard.txt", row.names = F)
+```
+
+
+
+Find overlaps with genes
+
+GFF with functional annotation
+```{r}
+
+selected_cnvs_uniq <- unique(subset(selected_cnvs, select = -c(allele, var.contr)))
+
+selected_cnvs_dapc1_gr <- makeGRangesFromDataFrame(selected_cnvs_uniq, keep.extra.columns = T)
+
+# load in the annotation file
+gff <- readGFFAsGRanges("Sva_to_Caribou_V2_CDS.gff")
+
+
+# subset to only get the CDS regions
+gff_CDS<- gff[gff$type=="CDS"]
+
+# find overlaps between CDS and CNVs
+outlierCNVsInCDS_dapc1 <- subsetByOverlaps(selected_cnvs_dapc1_gr, gff_CDS)
+GenesWithOutlierSNPs_dapc1 <- subsetByOverlaps(gff_CDS, selected_cnvs_dapc1_gr)
+
+
+
+hits <- findOverlaps(gff_CDS, selected_cnvs_dapc1_gr)
+CNVID <- CharacterList(split(selected_cnvs_dapc1_gr$ID[subjectHits(hits)],
+queryHits(hits)))
+
+mcols(GenesWithOutlierSNPs_dapc1) <- DataFrame(mcols(GenesWithOutlierSNPs_dapc1), CNVID)
+
+# save gene list 
+
+fwrite(as.data.frame(GenesWithOutlierSNPs_dapc1), file = "2024-10-31_CDSOverlap_differentiatedCNVs.csv", row.names = F)
+
+```
+
+Plot CNV loadings plot with annotations for CNVs that overlap with genes
+```{r}
+library(qqman)
+
+loadings_cont <- data.frame(dapc1$var.contr)
+loadings_cont$CNV_ID <- rownames(dapc1$var.contr)
+
+loadings_cont <- separate(loadings_cont, col=CNV_ID, into=c("chrom_p1", "chrom_p2", "start", "stop", "allele"))
+loadings_cont$ID <- paste(loadings_cont$chrom_p1, "_", loadings_cont$chrom_p2, ":", loadings_cont$start, "-", loadings_cont$stop, sep = "")
+loadings_cont$chrom <- paste(loadings_cont$chrom_p1, ".", loadings_cont$chrom_p2, sep = "")
+
+# add column for chromosome number
+loadings_cont$chrom_number <- NA
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056401.1"] <- 1
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056402.1"] <- 2
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056403.1"] <- 3
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056404.1"] <- 4
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056405.1"] <- 5
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056406.1"] <- 6
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056407.1"] <- 7
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056408.1"] <- 8
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056409.1"] <- 9
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056410.1"] <- 10
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056411.1"] <- 11
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056412.1"] <- 12
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056413.1"] <- 13
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056414.1"] <- 14
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056415.1"] <- 15
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056416.1"] <- 16
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056417.1"] <- 17
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056418.1"] <- 18
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056419.1"] <- 19
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056420.1"] <- 20
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056421.1"] <- 21
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056422.1"] <- 22
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056423.1"] <- 23
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056424.1"] <- 24
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056425.1"] <- 25
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056426.1"] <- 26
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056427.1"] <- 27
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056428.1"] <- 28
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056429.1"] <- 29
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056430.1"] <- 30
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056431.1"] <- 31
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056432.1"] <- 32
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056433.1"] <- 33
+loadings_cont$chrom_number[loadings_cont$chrom == "CM056434.1"] <- 34
+
+loadings_cont$start <- as.numeric(loadings_cont$start)
+loadings_cont$CNV_allele <- paste(loadings_cont$ID, loadings_cont$allele, sep = ":")
+
+# add a column that indicates if a CNV overlaps with a gene
+loadings_cont$inGene <- FALSE
+loadings_cont$inGene[loadings_cont$ID %in% outlierCNVsInCDS_dapc1$ID] <- TRUE
+
+# add an annotation column (CNV ID + allele) to be used in the manahattan plot
+loadings_cont$ann <- NA
+loadings_cont$ann[loadings_cont$inGene] <- loadings_cont$CNV_allele[loadings_cont$inGene]
+# set "inGene" to false for non outlier CNVs
+loadings_cont$inGene[loadings_cont$LD1 < .0005] <- FALSE
+
+# plot the CNV loadings as a manhattan plot. Highlight outlier CNVs overlapping with CDS
+manhattan(loadings_cont, chr="chrom_number", bp="start", snp="ann", p="LD1", logp = F, ylim = c(0, max(loadings_cont$LD1)), genomewideline = .0005, annotatePval = .0005, annotateTop = F, highlight = loadings_cont$ann[loadings_cont$inGene])
+
+
+```
+
+
+
