@@ -26,7 +26,7 @@ CHROMOSOMES=("CM056401.1" "CM056402.1" "CM056403.1" "CM056404.1" "CM056405.1" "C
 for CHR in "${CHROMOSOMES[@]}"; do
 	OUTPUT_PREFIX="${OUTPUT_DIR}/output_${CHR}"
     angsd -r "${CHR}" -bam bam_list_63_genomes -out reindeer_adaptation_data_63genomes -GL 2 -doGlf 2 -doPlink 2 -doMajorMinor 1 -SNP_pval 1e-6 -doGeno -1 -doPost 1 -minMapQ 30 -minQ 20 -minMaf 0.05
- -doCounts 1 -doMaf 3 -geno_minDepth 5 -setMinDepthInd 5 -postCutoff 0.95 -minInd 10 -remove_bads 1 -uniqueOnly 1 -nThreads 12
+ -doCounts 1 -doMaf 3 -geno_minDepth 5 -geno_maxDepth 8 -setMinDepthInd 5 -postCutoff 0.95 -minInd 10 -remove_bads 1 -uniqueOnly 1 -nThreads 12
 done
 
 # 1.2 combine all beagle files
