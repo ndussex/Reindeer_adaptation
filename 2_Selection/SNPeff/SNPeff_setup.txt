@@ -1,0 +1,85 @@
+### SNPeff
+##########
+
+#1. check annotation
+
+annotation='my_annotation.gff'
+gffread $annotation -F -J -g --no-pseudo  $ANC_REF -y Ancestral_cervids_prot.fa -w Ancestral_cervids_exons.fa -o Ancestral_cervids_no_STOP.gff 
+
+my_gff='annotation_no_STOP.gff'
+my_genes='my_exons.fa'
+my_proteins='my_prot.fa'
+
+
+#2. build a database# 
+
+nano snpEff.config
+#add this, just under the mouse genome (first few genomes listed):
+
+# my_genome genome, version my_genome_v1
+my_genome_v1.genome : my_genome
+
+### copy the data to this working dir:
+
+my_gff='annotation_no_STOP.gff'
+my_genes='my_exons.fa'
+my_proteins='my_prot.fa'
+
+	### create my data dir ###
+
+	mkdir data
+	cd data
+	mkdir my_genome_v1 #annotation
+	cd my_genome_v1
+	scp $my_gff .
+	scp $my_proteins .
+		
+	mv annotation_no_STOP.gff annotation.gff
+	mv annotation_prot.fa protein.fa
+
+	#add seq. at the bottom of the annotation
+	cat annotation.gff > genes.gff
+	echo "###"  >> genes.gff
+	echo "##FASTA"  >> genes.gff
+	cat $my_genes  >> genes.gff
+	
+	#convert to gtf
+	gffread genes.gff -T -o genes.gtf
+
+	### create my genome dir
+
+	cd ..
+	mkdir genomes
+	cd genomes
+
+	mygenome='my_genome.fa'
+	ln -s $mygenome my_genome_v1.fa
+
+### 2.3 create database
+snpEff=snpEFF_dir_location
+cd SNPeff
+
+	java -Xmx8g -jar $snpEff/snpEff.jar build -gtf22 -v my_genome_v1 -treatAllAsProteinCoding > database_log
+
+
+#################
+# 3. run snpEff # 
+#################
+
+myvcf='multi_ind_file.vcf.gz'
+
+#split vcf per individual
+
+mkdir myvcfs
+
+cd myvcfs
+
+for file in ../multi_ind_file.vcf.gz; do
+	 for sample in `bcftools query -l $file`; do
+	   bcftools view -c1 -Oz -s $sample -o $sample.vcf.gz $file
+	 done
+done
+
+# Run SNPeff:
+cd multi_ind_file.vcf.gz
+for i in $(ls *.vcf.gz| sed 's/.vcf.gz//g'); do sbatch snpEff.bsh  $i; done
